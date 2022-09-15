@@ -5,14 +5,17 @@
 #include<ctype.h>
 #include<stdio.h>
 #include<stdlib.h>
+#include<unistd.h>
+#include<errno.h>
 
 void main_loop();
 char** separate_command(char* buffer, int* words);
-void check_builtin(char** command_words, bool last_word);
+void check_builtin(char** command_words, int words, char** path);
+void change_directory(char* location);
+void overwrite_path(char** command_words, int words, char** path);
 
 int main() {
   main_loop();
-  printf("Test!\n");
   return 0;
 }
 void main_loop(){
@@ -22,14 +25,18 @@ void main_loop(){
   size_t bufsize = 128;
   size_t input;
 
-  char path[64] = "\bin";
+  char* path[32] = { "\0" };
+  path[0] = "/bin";
 
   do {
     words = 1;
-    printf("\nEnter something: ");
+    printf("dush> ");
     input = getline(&buffer, &bufsize, stdin);
     command_words = separate_command(buffer, &words);
-    check_builtin(command_words, words == 1);
+
+    if (command_words != NULL) {
+      check_builtin(command_words, words, path);
+    }
 
   } while ( /*strcmp(buffer, "exit\n")*/ true);
 
@@ -38,7 +45,7 @@ void main_loop(){
   free(command_words);
 
   exit(0);
-  printf("Test!\n");
+
 }
 
 char** separate_command(char* buffer, int* words){
@@ -53,7 +60,11 @@ char** separate_command(char* buffer, int* words){
       char **<name> : string array
   */
 
-  if(strlen(buffer) == 1) { return NULL; }
+  if(strlen(buffer) <= 1) { return NULL; }
+  else {
+    //clearing newline char from end
+    buffer[strlen(buffer)-1] = '\0';
+  }
 
   // counting number of spaces in the string input
   char prev_char = ' ';
@@ -97,24 +108,34 @@ char** separate_command(char* buffer, int* words){
 
 }
 
-void check_builtin(char** command_words, bool last_word){
+void check_builtin(char** command_words, int words, char** path){
 
   char* command = command_words[0];
 
-  //clearing any potential newline char
-  //char command_no_newline[strlen(command)];
-  //memset(command_no_newline, '\0', strlen(command));
-  if(last_word) { command[strlen(command) - 1] = '\0'; }
-
-  if (strcmp(command, "exit") == 0){
+  if (strcmp(command, "exit") == 0 && words == 1){
     // command_words string array was dynamically allocated, so
     // don't forget to free the memory!
     free(command_words);
     exit(0);
-  } else if (strcmp(command, "cd") == 0) {
-    printf("<Run CD command when implemented>...\n");
+  } else if (strcmp(command, "cd") == 0 && words == 2) {
+    change_directory(command_words[1]);
   } else if (strcmp(command, "path") == 0) {
-    printf("<Run Path command when implemented>...\n");
+    overwrite_path(command_words, words, path);
   }
 
+}
+
+void change_directory(char* location){
+  if (chdir(location) != 0) {
+    fprintf(stderr, "%s\n", strerror(errno));
+  } else {
+    printf("CD successful!\n");
+  }
+}
+
+void overwrite_path(char** command_words, int words, char** path){
+  int new_paths = (sizeof(command_words) - 1) / sizeof(command_words[0]);
+  int i = 0;
+
+  // ToDO : replace any non-empty path spaces with \0 and insert new paths
 }

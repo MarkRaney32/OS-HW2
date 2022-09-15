@@ -10,7 +10,7 @@
 
 void main_loop();
 char** separate_command(char* buffer, int* words);
-void check_builtin(char** command_words, int words, char** path);
+bool is_builtin(char** command_words, int words, char** path);
 void change_directory(char* location);
 void overwrite_path(char** command_words, int words, char** path);
 
@@ -35,7 +35,9 @@ void main_loop(){
     command_words = separate_command(buffer, &words);
 
     if (command_words != NULL) {
-      check_builtin(command_words, words, path);
+      if (!is_builtin(command_words, words, path)) {
+        printf("Non built-in command!\n");
+      }
     }
 
   } while ( /*strcmp(buffer, "exit\n")*/ true);
@@ -108,7 +110,7 @@ char** separate_command(char* buffer, int* words){
 
 }
 
-void check_builtin(char** command_words, int words, char** path){
+bool is_builtin(char** command_words, int words, char** path){
 
   char* command = command_words[0];
 
@@ -119,9 +121,13 @@ void check_builtin(char** command_words, int words, char** path){
     exit(0);
   } else if (strcmp(command, "cd") == 0 && words == 2) {
     change_directory(command_words[1]);
+    return true;
   } else if (strcmp(command, "path") == 0) {
     overwrite_path(command_words, words, path);
+    return true;
   }
+
+  return false;
 
 }
 
@@ -134,8 +140,14 @@ void change_directory(char* location){
 }
 
 void overwrite_path(char** command_words, int words, char** path){
-  int new_paths = (sizeof(command_words) - 1) / sizeof(command_words[0]);
-  int i = 0;
+  int old_paths = sizeof(path) / sizeof(path[0]);
 
-  // ToDO : replace any non-empty path spaces with \0 and insert new paths
+  for (int i = 0; i < old_paths; i++) {
+    path[i] = "\0";
+  }
+
+  for (int i = 1; i < words; i++) {
+    path[i-1] = command_words[i];
+  }
+
 }

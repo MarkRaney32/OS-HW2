@@ -10,14 +10,16 @@
 
 void main_loop();
 char** separate_command(char* buffer, int* words);
-bool is_builtin(char** command_words, int words, char** path);
+bool is_builtin(char** command_words, int words, char** path, int* paths);
 void change_directory(char* location);
-void overwrite_path(char** command_words, int words, char** path);
+void overwrite_path(char** command_words, int words, char** path, int* paths);
+bool file_exists(char** command_words, int words, char** path, int paths);
 
 int main() {
   main_loop();
   return 0;
 }
+
 void main_loop(){
   char* buffer;
   char** command_words;
@@ -25,6 +27,7 @@ void main_loop(){
   size_t bufsize = 128;
   size_t input;
 
+  int paths = 1;
   char* path[32] = { "\0" };
   path[0] = "/bin";
 
@@ -35,8 +38,8 @@ void main_loop(){
     command_words = separate_command(buffer, &words);
 
     if (command_words != NULL) {
-      if (!is_builtin(command_words, words, path)) {
-        printf("Non built-in command!\n");
+      if (!is_builtin(command_words, words, path, &paths)) {
+        bool exists = file_exists(command_words, words, path, paths);
       }
     }
 
@@ -110,7 +113,7 @@ char** separate_command(char* buffer, int* words){
 
 }
 
-bool is_builtin(char** command_words, int words, char** path){
+bool is_builtin(char** command_words, int words, char** path, int* paths){
 
   char* command = command_words[0];
 
@@ -123,7 +126,7 @@ bool is_builtin(char** command_words, int words, char** path){
     change_directory(command_words[1]);
     return true;
   } else if (strcmp(command, "path") == 0) {
-    overwrite_path(command_words, words, path);
+    overwrite_path(command_words, words, path, paths);
     return true;
   }
 
@@ -139,10 +142,9 @@ void change_directory(char* location){
   }
 }
 
-void overwrite_path(char** command_words, int words, char** path){
-  int old_paths = sizeof(path) / sizeof(path[0]);
+void overwrite_path(char** command_words, int words, char** path, int* paths){
 
-  for (int i = 0; i < old_paths; i++) {
+  for (int i = 0; i < *paths; i++) {
     path[i] = "\0";
   }
 
@@ -150,4 +152,26 @@ void overwrite_path(char** command_words, int words, char** path){
     path[i-1] = command_words[i];
   }
 
+  *paths = words - 1;
+
+}
+
+bool file_exists(char** command_words, int words, char** path, int paths) {
+
+  printf("Paths: %d\n", paths);
+  char location[64] = { '\0' };
+
+  for (int i = 0; i < paths; i++) {
+    strcpy(location, path[i]);
+    strcat(location, "/");
+    strcat(location, command_words[0]);
+    printf("Testing location: %s\n", location);
+    if (access(location, X_OK)) {
+      printf("%s exists!\n", location);
+      return true;
+    }
+  }
+
+  printf("%s does not exist!\n", location);
+  return false;
 }

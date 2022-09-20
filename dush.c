@@ -7,6 +7,7 @@
 #include<stdlib.h>
 #include<unistd.h>
 #include<errno.h>
+#include<sys/wait.h>
 
 void main_loop();
 char** separate_command(char* buffer, int* words);
@@ -14,6 +15,7 @@ bool is_builtin(char** command_words, int words, char** path, int* paths);
 void change_directory(char* location);
 void overwrite_path(char** command_words, int words, char** path, int* paths);
 bool file_exists(char** command_words, int words, char** path, int paths);
+void run_execv(char** command_words, char* location);
 
 int main() {
   main_loop();
@@ -158,7 +160,6 @@ void overwrite_path(char** command_words, int words, char** path, int* paths){
 
 bool file_exists(char** command_words, int words, char** path, int paths) {
 
-  printf("Paths: %d\n", paths);
   char location[64] = { '\0' };
 
   for (int i = 0; i < paths; i++) {
@@ -166,12 +167,23 @@ bool file_exists(char** command_words, int words, char** path, int paths) {
     strcat(location, "/");
     strcat(location, command_words[0]);
     printf("Testing location: %s\n", location);
-    if (access(location, X_OK)) {
-      printf("%s exists!\n", location);
+    if (access(location, X_OK) == 0) {
+      printf("%s was found!\n", location);
+      run_execv(command_words, location);
       return true;
     }
   }
 
   printf("%s does not exist!\n", location);
   return false;
+}
+
+void run_execv(char** command_words, char* command) {
+  if(fork() == 0) {
+    execv(command, command_words);
+    printf("Something went wrong!\n");
+    exit(0);
+  } else {
+    wait(NULL);
+  }
 }

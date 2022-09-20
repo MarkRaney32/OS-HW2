@@ -14,11 +14,13 @@ char** separate_command(char* buffer, int* words);
 bool is_builtin(char** command_words, int words, char** path, int* paths);
 void change_directory(char* location);
 void overwrite_path(char** command_words, int words, char** path, int* paths);
-bool file_exists(char** command_words, int words, char** path, int paths, bool solo_command);
-void run_execv(char** command_words, char* location, bool solo_command);
+bool file_exists(char** command_words, int words, char** path, int paths, bool destroy_parent);
+void run_execv(char** command_words, char* location, bool destroy_parent);
 int contains_redirection(char** command_words, int words);
 int* contains_parallel(char** command_words, int words);
-char*** separate_parallel_commands(char** command_words, int words, char** path, int paths);
+char*** separate_parallel_commands(char** command_words, int words, char** path, int paths, int *commands_issued, int** command_lengths);
+void execute_commands(char*** commands, int commands_issued, char** path, int *paths, int* command_lengths);
+
 
 void dush_prompt() {
   printf("dush> ");
@@ -53,6 +55,8 @@ void main_loop(FILE * in){
   size_t bufsize = 128;
   size_t input;
   char*** separated_command_words;
+  int commands_issued;
+  int* command_lengths;
 
   int paths = 1;
   char* path[32] = { "\0" };
@@ -64,15 +68,13 @@ void main_loop(FILE * in){
     input = getline(&buffer, &bufsize, in);
     command_words = separate_command(buffer, &words);
 
-    printf("CHECKING PARALLELS\n");
-    separated_command_words == separate_parallel_commands(command_words, words, path, paths);
-    printf("DONE CHECKING PARALLELS\n");
+    separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
 
-    if (command_words != NULL) {
-      if (!is_builtin(command_words, words, path, &paths)) {
-        bool exists = file_exists(command_words, words, path, paths, true);
-      }
-    }
+    execute_commands(separated_command_words, commands_issued, path, &paths, command_lengths);
+
+    free(separated_command_words);
+    free(command_lengths);
+    exit(0);
 
   } while ( /*strcmp(buffer, "exit\n")*/ true);
 
@@ -184,7 +186,7 @@ void overwrite_path(char** command_words, int words, char** path, int* paths){
 
 }
 
-bool file_exists(char** command_words, int words, char** path, int paths, bool solo_command) {
+bool file_exists(char** command_words, int words, char** path, int paths, bool destroy_parent) {
 
   char location[64] = { '\0' };
 
@@ -193,7 +195,7 @@ bool file_exists(char** command_words, int words, char** path, int paths, bool s
     strcat(location, "/");
     strcat(location, command_words[0]);
     if (access(location, X_OK) == 0) {
-      run_execv(command_words, location, solo_command);
+      run_execv(command_words, location, destroy_parent);
       return true;
     }
   }
@@ -202,15 +204,17 @@ bool file_exists(char** command_words, int words, char** path, int paths, bool s
   return false;
 }
 
-void run_execv(char** command_words, char* command, bool solo_command) {
+void run_execv(char** command_words, char* command, bool destroy_parent) {
   if(fork() == 0) {
+    printf("I am a child!\n");
     execv(command, command_words);
     printf("Something went wrong!\n");
     exit(0);
   } else {
-    wait(NULL);
-    if (solo_command == false) {
+    if (destroy_parent == true) {
       exit(0);
+    } else {
+      wait(NULL);
     }
   }
 }
@@ -224,7 +228,7 @@ int contains_redirection(char** command_words, int words) {
       return i;
     }
   }
-  return 0;
+  return -1;
 }
 
 int* contains_parallel(char** command_words, int words) {
@@ -248,7 +252,7 @@ int* contains_parallel(char** command_words, int words) {
   return parallel_separators;
 }
 
-char *** separate_parallel_commands(char** command_words, int words, char** path, int paths) {
+char *** separate_parallel_commands(char** command_words, int words, char** path, int paths, int *commands_issued, int** command_lengths) {
   /*
     Idea of this function is to create subcommands via taking the command words between two adjacent
     indexes listed in separator_indexes. Then, within each of those we can check for redirection
@@ -262,6 +266,9 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
     else { break; }
   }
 
+  *commands_issued = num_separators + 1;
+  *command_lengths = malloc(*commands_issued * sizeof(int *));
+
   /*
   // creating base array to temporarily hold the subcommands
   char** command_words_sub_command = malloc((num_separators + 1) * sizeof(char *));
@@ -270,8 +277,9 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
   }
   */
 
-  char*** separated_command_words = malloc((num_separators + 1) * sizeof(char **));
-  for (int i = 0; i < num_separators; i++) {
+
+  char*** separated_command_words = malloc((num_separators + 1) * sizeof(char *));
+  for (int i = 0; i < num_separators + 1; i++) {
     separated_command_words[i] = malloc(words * sizeof(char *));
     for (int j = 0; j < words; j++) {
       separated_command_words[i][j] = malloc(32 * sizeof(char));
@@ -284,16 +292,34 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
   for (int i = 0; i < num_separators + 1; i++) {
     start_index = end_index;
     end_index = separator_indexes[i];
-    if (i == num_separators) { end_index++; }
+    if (i == num_separators) { end_index = words; }
     for (int j = start_index; j < end_index; j++) {
       strcpy(separated_command_words[i][j - start_index], command_words[j]);
-      printf("%s ", separated_command_words[i][j - start_index]);
     }
-    printf("\n");
+    (*command_lengths)[i] = end_index - start_index;
     end_index++;
   }
 
-  //file_exists(command_words_sub_command, end_index - start_index, path, paths, false);
+  // file_exists(command_words_sub_command, end_index - start_index, path, paths, false);
   return separated_command_words;
+
+}
+
+void execute_commands(char*** commands, int commands_issued, char** path, int *paths, int* command_lengths) {
+
+  // Using first fork to keep one single process alive after all
+  // commands have been issued
+
+  if(fork() != 0) {
+    for (int i = 0; i < commands_issued; i++) {
+      if (!is_builtin(commands[i], command_lengths[i], path, paths)) {
+        bool exists = file_exists(commands[i], command_lengths[i], path, *paths, true);
+      }
+    }
+    exit(0);
+  } else {
+    printf("I'm the super parent!\n");
+    wait(NULL);
+  }
 
 }

@@ -14,11 +14,11 @@ char** separate_command(char* buffer, int* words);
 bool is_builtin(char** command_words, int words, char** path, int* paths);
 void change_directory(char* location);
 void overwrite_path(char** command_words, int words, char** path, int* paths);
-bool file_exists(char** command_words, int words, char** path, int paths);
-void run_execv(char** command_words, char* location);
+bool file_exists(char** command_words, int words, char** path, int paths, bool solo_command);
+void run_execv(char** command_words, char* location, bool solo_command);
 int contains_redirection(char** command_words, int words);
 int* contains_parallel(char** command_words, int words);
-void run_parallels(char** command_words, int words, int* separator_indexes, int num_separators);
+char*** separate_parallel_commands(char** command_words, int words, char** path, int paths);
 
 void dush_prompt() {
   printf("dush> ");
@@ -52,6 +52,7 @@ void main_loop(FILE * in){
   int words = 1;
   size_t bufsize = 128;
   size_t input;
+  char*** separated_command_words;
 
   int paths = 1;
   char* path[32] = { "\0" };
@@ -63,9 +64,13 @@ void main_loop(FILE * in){
     input = getline(&buffer, &bufsize, in);
     command_words = separate_command(buffer, &words);
 
+    printf("CHECKING PARALLELS\n");
+    separated_command_words == separate_parallel_commands(command_words, words, path, paths);
+    printf("DONE CHECKING PARALLELS\n");
+
     if (command_words != NULL) {
       if (!is_builtin(command_words, words, path, &paths)) {
-        bool exists = file_exists(command_words, words, path, paths);
+        bool exists = file_exists(command_words, words, path, paths, true);
       }
     }
 
@@ -179,7 +184,7 @@ void overwrite_path(char** command_words, int words, char** path, int* paths){
 
 }
 
-bool file_exists(char** command_words, int words, char** path, int paths) {
+bool file_exists(char** command_words, int words, char** path, int paths, bool solo_command) {
 
   char location[64] = { '\0' };
 
@@ -188,7 +193,7 @@ bool file_exists(char** command_words, int words, char** path, int paths) {
     strcat(location, "/");
     strcat(location, command_words[0]);
     if (access(location, X_OK) == 0) {
-      run_execv(command_words, location);
+      run_execv(command_words, location, solo_command);
       return true;
     }
   }
@@ -197,13 +202,16 @@ bool file_exists(char** command_words, int words, char** path, int paths) {
   return false;
 }
 
-void run_execv(char** command_words, char* command) {
+void run_execv(char** command_words, char* command, bool solo_command) {
   if(fork() == 0) {
     execv(command, command_words);
     printf("Something went wrong!\n");
     exit(0);
   } else {
     wait(NULL);
+    if (solo_command == false) {
+      exit(0);
+    }
   }
 }
 
@@ -222,7 +230,7 @@ int contains_redirection(char** command_words, int words) {
 int* contains_parallel(char** command_words, int words) {
   /*
     Returns int pointer array of the indexes of command_words where parallel chars appear.
-    The length is set to the number of words, but to get its size, we include a -1
+    The length is set to the number of words, but to get its size, we include the value words - 1
     after all indexes are included to mark the symbolic end of the array.
   */
   int* parallel_separators = malloc((words + 1) * sizeof(int));
@@ -235,19 +243,57 @@ int* contains_parallel(char** command_words, int words) {
   }
 
   // setting a known end-of-list value so we may obtain its size later
-  parallel_separators[index] = -1;
+  parallel_separators[index] = words-1;
 
   return parallel_separators;
 }
 
-void run_parallels(char** command_words, int words, int* separator_indexes, int num_separators) {
+char *** separate_parallel_commands(char** command_words, int words, char** path, int paths) {
   /*
     Idea of this function is to create subcommands via taking the command words between two adjacent
     indexes listed in separator_indexes. Then, within each of those we can check for redirection
     since I assume parallel commands have precedent over redirecting output.
   */
 
-  printf("TO IMPLEMENT...\n");
+  int* separator_indexes = contains_parallel(command_words, words);
+  int num_separators = 0;
+  for (int i = 0; i < words; i++) {
+    if (separator_indexes[i] != words - 1) { num_separators++; }
+    else { break; }
+  }
 
-  //char** command_words_sub_command = malloc()
+  /*
+  // creating base array to temporarily hold the subcommands
+  char** command_words_sub_command = malloc((num_separators + 1) * sizeof(char *));
+  for (int i = 0; i < num_separators + 1; i++) {
+    command_words_sub_command[i] = malloc(32 * sizeof(char));
+  }
+  */
+
+  char*** separated_command_words = malloc((num_separators + 1) * sizeof(char **));
+  for (int i = 0; i < num_separators; i++) {
+    separated_command_words[i] = malloc(words * sizeof(char *));
+    for (int j = 0; j < words; j++) {
+      separated_command_words[i][j] = malloc(32 * sizeof(char));
+    }
+  }
+
+  // separating commands to individual subcommands
+  int start_index = 0;
+  int end_index = 0;
+  for (int i = 0; i < num_separators + 1; i++) {
+    start_index = end_index;
+    end_index = separator_indexes[i];
+    if (i == num_separators) { end_index++; }
+    for (int j = start_index; j < end_index; j++) {
+      strcpy(separated_command_words[i][j - start_index], command_words[j]);
+      printf("%s ", separated_command_words[i][j - start_index]);
+    }
+    printf("\n");
+    end_index++;
+  }
+
+  //file_exists(command_words_sub_command, end_index - start_index, path, paths, false);
+  return separated_command_words;
+
 }

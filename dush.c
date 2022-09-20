@@ -9,20 +9,44 @@
 #include<errno.h>
 #include<sys/wait.h>
 
-void main_loop();
+void main_loop(FILE * in);
 char** separate_command(char* buffer, int* words);
 bool is_builtin(char** command_words, int words, char** path, int* paths);
 void change_directory(char* location);
 void overwrite_path(char** command_words, int words, char** path, int* paths);
 bool file_exists(char** command_words, int words, char** path, int paths);
 void run_execv(char** command_words, char* location);
+int contains_redirection(char** command_words, int words);
+int* contains_parallel(char** command_words, int words);
+void run_parallels(char** command_words, int words, int* separator_indexes, int num_separators);
 
-int main() {
-  main_loop();
+void dush_prompt() {
+  printf("dush> ");
+}
+
+void error_prompt() {
+  char error_message[30] = "An error has occurred\n";
+  write(STDERR_FILENO, error_message, strlen(error_message));
+}
+
+int main(int argc, char * argv[]) {
+  FILE * input = NULL;
+  if (argc == 1) {
+    input = stdin;
+  } else if (argc == 2) {
+    char * fileName = strdup(argv[1]);
+    input = fopen(fileName, "r");
+    if (input == NULL) {
+      error_prompt();
+    }
+  } else {
+    error_prompt();
+  }
+  main_loop(input);
   return 0;
 }
 
-void main_loop(){
+void main_loop(FILE * in){
   char* buffer;
   char** command_words;
   int words = 1;
@@ -35,8 +59,8 @@ void main_loop(){
 
   do {
     words = 1;
-    printf("dush> ");
-    input = getline(&buffer, &bufsize, stdin);
+    dush_prompt();
+    input = getline(&buffer, &bufsize, in);
     command_words = separate_command(buffer, &words);
 
     if (command_words != NULL) {
@@ -60,7 +84,6 @@ char** separate_command(char* buffer, int* words){
     This function takes in a string command and separates it into
     a string array where each index is an individual word. This
     function automatically deals with repeated whitespace.
-
     Input:
       char* buffer : string command
     Output:
@@ -139,8 +162,6 @@ bool is_builtin(char** command_words, int words, char** path, int* paths){
 void change_directory(char* location){
   if (chdir(location) != 0) {
     fprintf(stderr, "%s\n", strerror(errno));
-  } else {
-    printf("CD successful!\n");
   }
 }
 
@@ -166,9 +187,7 @@ bool file_exists(char** command_words, int words, char** path, int paths) {
     strcpy(location, path[i]);
     strcat(location, "/");
     strcat(location, command_words[0]);
-    printf("Testing location: %s\n", location);
     if (access(location, X_OK) == 0) {
-      printf("%s was found!\n", location);
       run_execv(command_words, location);
       return true;
     }
@@ -186,4 +205,49 @@ void run_execv(char** command_words, char* command) {
   } else {
     wait(NULL);
   }
+}
+
+int contains_redirection(char** command_words, int words) {
+  /*
+    Returns index of a redirection char, or -1 if none found.
+  */
+  for (int i = 0; i < words; i++){
+    if (strcmp(command_words[i], ">") == 0) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+int* contains_parallel(char** command_words, int words) {
+  /*
+    Returns int pointer array of the indexes of command_words where parallel chars appear.
+    The length is set to the number of words, but to get its size, we include a -1
+    after all indexes are included to mark the symbolic end of the array.
+  */
+  int* parallel_separators = malloc((words + 1) * sizeof(int));
+  int index = 0;
+  for (int i = 0; i < words; i++) {
+    if (strcmp(command_words[i], "&") == 0) {
+      parallel_separators[index] = i;
+      index++;
+    }
+  }
+
+  // setting a known end-of-list value so we may obtain its size later
+  parallel_separators[index] = -1;
+
+  return parallel_separators;
+}
+
+void run_parallels(char** command_words, int words, int* separator_indexes, int num_separators) {
+  /*
+    Idea of this function is to create subcommands via taking the command words between two adjacent
+    indexes listed in separator_indexes. Then, within each of those we can check for redirection
+    since I assume parallel commands have precedent over redirecting output.
+  */
+
+  printf("TO IMPLEMENT...\n");
+
+  //char** command_words_sub_command = malloc()
 }

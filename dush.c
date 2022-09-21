@@ -11,16 +11,15 @@
 
 void main_loop(FILE * in);
 char** separate_command(char* buffer, int* words);
-bool is_builtin(char** command_words, int words, char** path, int* paths);
+bool is_builtin(char** command_words, int words, char*** path, int* paths, bool run);
 void change_directory(char* location);
-void overwrite_path(char** command_words, int words, char** path, int* paths);
+char** overwrite_path(char** command_words, int words, char*** path, int* paths);
 char* file_exists(char** command_words, int words, char** path, int paths, bool run_file);
 void run_execv(char** command_words, char* location);
 int contains_redirection(char** command_words, int words);
 int* contains_parallel(char** command_words, int words);
 char*** separate_parallel_commands(char** command_words, int words, char** path, int paths, int *commands_issued, int** command_lengths);
-void execute_commands(char*** commands, int commands_issued, char** path, int *paths, int* command_lengths);
-
+void execute_commands(char*** commands, int commands_issued, char*** path, int *paths, int* command_lengths);
 
 void dush_prompt() {
   printf("dush> ");
@@ -59,10 +58,16 @@ void main_loop(FILE * in){
   int* command_lengths;
 
   int paths = 1;
-  char* path[32] = { "\0" };
-  path[0] = "/bin";
+  char** path;
+  char** initialize_path_command;
+  char* initial_path = "/bin";
+  path = malloc(sizeof(char*));
+  path[0] = malloc(strlen(initial_path) * sizeof(char));
+  path[0] = initial_path;
+
 
   do {
+
     words = 1;
     dush_prompt();
     input = getline(&buffer, &bufsize, in);
@@ -70,11 +75,10 @@ void main_loop(FILE * in){
 
     separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
 
-    execute_commands(separated_command_words, commands_issued, path, &paths, command_lengths);
+    execute_commands(separated_command_words, commands_issued, &path, &paths, command_lengths);
 
     free(separated_command_words);
     free(command_lengths);
-    exit(0);
 
   } while ( /*strcmp(buffer, "exit\n")*/ true);
 
@@ -145,7 +149,7 @@ char** separate_command(char* buffer, int* words){
 
 }
 
-bool is_builtin(char** command_words, int words, char** path, int* paths){
+bool is_builtin(char** command_words, int words, char*** path, int* paths, bool run){
 
   char* command = command_words[0];
 
@@ -155,10 +159,10 @@ bool is_builtin(char** command_words, int words, char** path, int* paths){
     free(command_words);
     exit(0);
   } else if (strcmp(command, "cd") == 0 && words == 2) {
-    change_directory(command_words[1]);
+    if(run) { change_directory(command_words[1]); }
     return true;
   } else if (strcmp(command, "path") == 0) {
-    overwrite_path(command_words, words, path, paths);
+    if(run) { *path = overwrite_path(command_words, words, path, paths); }
     return true;
   }
 
@@ -172,17 +176,23 @@ void change_directory(char* location){
   }
 }
 
-void overwrite_path(char** command_words, int words, char** path, int* paths){
+char** overwrite_path(char** command_words, int words, char*** path, int* paths){
 
-  for (int i = 0; i < *paths; i++) {
-    path[i] = "\0";
-  }
+  /*
+  for(int i = 0; i < *paths; i++) {
+    printf("%s\n", (*path)[i]);
+  } //free(*path);
+  */
+  char** new_path;
+  new_path = malloc((words-1) * sizeof(char*));
 
   for (int i = 1; i < words; i++) {
-    path[i-1] = command_words[i];
+    new_path[i-1] = malloc(strlen(command_words[i]) * sizeof(char));
+    new_path[i-1] = command_words[i];
   }
 
   *paths = words - 1;
+  return new_path;
 
 }
 
@@ -297,8 +307,9 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
 
 }
 
-void execute_commands(char*** commands, int commands_issued, char** path, int *paths, int* command_lengths) {
+void execute_commands(char*** commands, int commands_issued, char*** path, int *paths, int* command_lengths) {
 
+  bool exit_issued = false;
   char** commands_correct_length[commands_issued];
 
   for(int i = 0; i < commands_issued; i++) {
@@ -306,6 +317,9 @@ void execute_commands(char*** commands, int commands_issued, char** path, int *p
     for(int j = 0; j < command_lengths[i]; j++) {
       commands_correct_length[i][j] = malloc(strlen(commands[i][j]) * sizeof(char));
       strcpy(commands_correct_length[i][j], commands[i][j]);
+      if(command_lengths[i] == 1 && strcmp(commands_correct_length[i][j], "exit") == 0) {
+        exit_issued = true;
+      }
     }
   }
 
@@ -314,8 +328,8 @@ void execute_commands(char*** commands, int commands_issued, char** path, int *p
   int pid = fork();
   if (pid == 0) {
     for(int i = 0; i < commands_issued; i++) {
-      if(is_builtin(commands_correct_length[i], command_lengths[i], path, paths)) { continue; }
-      char* location = file_exists(commands_correct_length[i], command_lengths[i], path, *paths, false);
+      if(is_builtin(commands_correct_length[i], command_lengths[i], path, paths, false)) { continue; }
+      char* location = file_exists(commands_correct_length[i], command_lengths[i], *path, *paths, false);
       if(strcmp(location, "\0") != 0) {
         // creating secondary fork to run execv and continue loop
         int pid2 = fork();
@@ -323,16 +337,23 @@ void execute_commands(char*** commands, int commands_issued, char** path, int *p
           //execv(location, commands_correct_length[i]);
           run_execv(commands_correct_length[i], location);
         }
-      } else {
-        printf("File not found!\n");
       }
     }
     // exiting out from the fork that continued through entirety of loop
     // while waiting for all execv calls to complete
     wait(NULL);
     exit(0);
-  } else {
-    // parent process waiting for the parallel commands to complete
-    wait(NULL);
+  }
+
+  // parent process waiting for the parallel commands to complete
+  wait(NULL);
+
+  // checking if first command is builtin
+  // (This is done w the assumption that parallel commands
+  //  will not include builtin commands)
+  is_builtin(commands_correct_length[0], command_lengths[0], path, paths, true);
+
+  if(exit_issued) {
+    exit(0);
   }
 }

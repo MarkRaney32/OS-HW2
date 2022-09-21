@@ -8,14 +8,15 @@
 #include<unistd.h>
 #include<errno.h>
 #include<sys/wait.h>
+#include<fcntl.h>
 
 void main_loop(FILE * in);
 char** separate_command(char* buffer, int* words);
 bool is_builtin(char** command_words, int words, char*** path, int* paths, bool run);
 void change_directory(char* location);
 char** overwrite_path(char** command_words, int words, char*** path, int* paths);
-char* file_exists(char** command_words, int words, char** path, int paths, bool run_file);
-void run_execv(char** command_words, char* location);
+char* file_exists(char** command_words, int words, char** path, int paths, bool run_file, int redirectResult);
+void run_execv(char** command_words, char* location, int redirectResult, int num_commands);
 int contains_redirection(char** command_words, int words);
 int* contains_parallel(char** command_words, int words);
 char*** separate_parallel_commands(char** command_words, int words, char** path, int paths, int *commands_issued, int** command_lengths);
@@ -76,9 +77,9 @@ void main_loop(FILE * in){
 
     command_words = separate_command(buffer, &words);
 
-    if(words == 0) { continue; }
-
     separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
+
+    if(words == 0) { continue; }
 
     execute_commands(separated_command_words, commands_issued, &path, &paths, command_lengths);
 
@@ -122,8 +123,6 @@ char** separate_command(char* buffer, int* words){
       awaiting_new_word = true;
     }
   }
-
-  if(words == 0) { return NULL; }
 
   // Dynamically allocating memory for the string
   // array because we want to return this data, and
@@ -199,7 +198,7 @@ char** overwrite_path(char** command_words, int words, char*** path, int* paths)
 
 }
 
-char* file_exists(char** command_words, int words, char** path, int paths, bool run_file) {
+char* file_exists(char** command_words, int words, char** path, int paths, bool run_file, int redirectResult) {
 
   char* location = malloc(32 * sizeof(char));
 
@@ -209,7 +208,7 @@ char* file_exists(char** command_words, int words, char** path, int paths, bool 
     strcat(location, command_words[0]);
     if (access(location, X_OK) == 0) {
       if (run_file == true) {
-        run_execv(command_words, location);
+        run_execv(command_words, location, redirectResult, words);
       }
       return location;
     }
@@ -218,10 +217,39 @@ char* file_exists(char** command_words, int words, char** path, int paths, bool 
   return "\0";
 }
 
-void run_execv(char** command_words, char* command) {
-  execv(command, command_words);
-  printf("Something went wrong!\n");
-  exit(0);
+void run_execv(char** command_words, char* command, int redirectResult, int num_commands) {
+	char ** redirect_command_words;
+  int redirect_words = 1;
+  bool rd = false;
+
+	if (redirectResult >= 0 && num_commands == (redirectResult + 2)) {
+		rd = true;
+		char f[64];
+		strcpy(f, command_words[redirectResult + 1]);
+		for (int i = redirectResult; i < num_commands; i++) {
+			command_words[i] = "\0";
+		}
+		redirect_command_words = malloc(redirectResult * sizeof(char*));
+		for (int i = 0; i < redirectResult; i++) {
+			redirect_command_words[i] = malloc(32 * sizeof(char));
+			strcpy(redirect_command_words[i], command_words[i]);
+		}
+
+		int fileOut = open(f, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+		dup2(fileOut, STDOUT_FILENO);
+		dup2(fileOut, STDERR_FILENO);
+		close(fileOut);
+	} else if (redirectResult != -1) {
+		error_prompt();
+		exit(0);
+	}
+	if (rd == true) {
+		execv(command, redirect_command_words);
+	} else {
+		execv(command, command_words);
+	}
+	printf("Something went wrong!\n");
+	exit(0);
 }
 
 int contains_redirection(char** command_words, int words) {
@@ -314,9 +342,8 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
 
   bool exit_issued = false;
   char** commands_correct_length[commands_issued];
+	int redirect = -1;
 
-  // the commands array adds in empty strings at the end of each sub-array, so
-  // we create this new 2d string array to use the correct number of elements
   for(int i = 0; i < commands_issued; i++) {
     commands_correct_length[i] = malloc(command_lengths[i] * sizeof(char*));
     for(int j = 0; j < command_lengths[i]; j++) {
@@ -333,13 +360,14 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
   int pid = fork();
   if (pid == 0) {
     for(int i = 0; i < commands_issued; i++) {
+			redirect = contains_redirection(commands_correct_length[i], command_lengths[i]);
       if(is_builtin(commands_correct_length[i], command_lengths[i], path, paths, false)) { continue; }
-      char* location = file_exists(commands_correct_length[i], command_lengths[i], *path, *paths, false);
+      char* location = file_exists(commands_correct_length[i], command_lengths[i], *path, *paths, false, redirect);
       if(strcmp(location, "\0") != 0) {
         // creating secondary fork to run execv and continue loop
         int pid2 = fork();
         if (pid2 == 0) {
-          run_execv(commands_correct_length[i], location);
+          run_execv(commands_correct_length[i], location, redirect, command_lengths[i]);
         }
       }
     }

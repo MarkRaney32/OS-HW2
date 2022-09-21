@@ -50,7 +50,7 @@ int main(int argc, char * argv[]) {
 void main_loop(FILE * in){
   char* buffer;
   char** command_words;
-  int words = 1;
+  int words;
   size_t bufsize = 128;
   size_t input;
   char*** separated_command_words;
@@ -68,10 +68,15 @@ void main_loop(FILE * in){
 
   do {
 
-    words = 1;
+    words = 0;
     dush_prompt();
     input = getline(&buffer, &bufsize, in);
+
+    if(strcmp(buffer, "\n") == 0) { continue; }
+
     command_words = separate_command(buffer, &words);
+
+    if(words == 0) { continue; }
 
     separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
 
@@ -108,19 +113,17 @@ char** separate_command(char* buffer, int* words){
   }
 
   // counting number of spaces in the string input
-  char prev_char = ' ';
+  bool awaiting_new_word = true;
   for(int i = 0; i < strlen(buffer) - 1; i++){
-    if (buffer[i] == ' ' && prev_char != ' ') {
-       (*words)++;
+    if (buffer[i] != ' ' && awaiting_new_word) {
+      (*words)++;
+      awaiting_new_word = false;
+    } else if (buffer[i] == ' '){
+      awaiting_new_word = true;
     }
-    prev_char = buffer[i];
   }
 
-
-  // checking that the command doesn't end on emptyspace
-  // checking index -2 instead of -1 b/c getline adds
-  // \n to end of input.
-  if (buffer[strlen(buffer) - 2] == ' ') { (*words)--; }
+  if(words == 0) { return NULL; }
 
   // Dynamically allocating memory for the string
   // array because we want to return this data, and
@@ -312,6 +315,8 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
   bool exit_issued = false;
   char** commands_correct_length[commands_issued];
 
+  // the commands array adds in empty strings at the end of each sub-array, so
+  // we create this new 2d string array to use the correct number of elements
   for(int i = 0; i < commands_issued; i++) {
     commands_correct_length[i] = malloc(command_lengths[i] * sizeof(char*));
     for(int j = 0; j < command_lengths[i]; j++) {
@@ -334,7 +339,6 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
         // creating secondary fork to run execv and continue loop
         int pid2 = fork();
         if (pid2 == 0) {
-          //execv(location, commands_correct_length[i]);
           run_execv(commands_correct_length[i], location);
         }
       }

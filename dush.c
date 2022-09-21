@@ -345,7 +345,7 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
 	int redirect = -1;
 
   for(int i = 0; i < commands_issued; i++) {
-    commands_correct_length[i] = malloc(command_lengths[i] * sizeof(char*));
+    commands_correct_length[i] = malloc(command_lengths[i] * sizeof(char*) + 1);
     for(int j = 0; j < command_lengths[i]; j++) {
       commands_correct_length[i][j] = malloc(strlen(commands[i][j]) * sizeof(char));
       strcpy(commands_correct_length[i][j], commands[i][j]);
@@ -353,10 +353,12 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
         exit_issued = true;
       }
     }
+    commands_correct_length[i][command_lengths[i]] = NULL;
   }
 
   // Using first fork to keep one single process alive after all
   // commands have been issued
+
   int pid = fork();
   if (pid == 0) {
     for(int i = 0; i < commands_issued; i++) {
@@ -378,7 +380,8 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
   }
 
   // parent process waiting for the parallel commands to complete
-  wait(NULL);
+  int returnStatus;
+  waitpid(pid, &returnStatus, 0);
 
   // checking if first command is builtin
   // (This is done w the assumption that parallel commands

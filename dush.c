@@ -14,8 +14,8 @@ char** separate_command(char* buffer, int* words);
 bool is_builtin(char** command_words, int words, char** path, int* paths);
 void change_directory(char* location);
 void overwrite_path(char** command_words, int words, char** path, int* paths);
-bool file_exists(char** command_words, int words, char** path, int paths, bool destroy_parent);
-void run_execv(char** command_words, char* location, bool destroy_parent);
+char* file_exists(char** command_words, int words, char** path, int paths, bool run_file);
+void run_execv(char** command_words, char* location);
 int contains_redirection(char** command_words, int words);
 int* contains_parallel(char** command_words, int words);
 char*** separate_parallel_commands(char** command_words, int words, char** path, int paths, int *commands_issued, int** command_lengths);
@@ -186,37 +186,29 @@ void overwrite_path(char** command_words, int words, char** path, int* paths){
 
 }
 
-bool file_exists(char** command_words, int words, char** path, int paths, bool destroy_parent) {
+char* file_exists(char** command_words, int words, char** path, int paths, bool run_file) {
 
-  char location[64] = { '\0' };
+  char* location = malloc(32 * sizeof(char));
 
   for (int i = 0; i < paths; i++) {
     strcpy(location, path[i]);
     strcat(location, "/");
     strcat(location, command_words[0]);
     if (access(location, X_OK) == 0) {
-      run_execv(command_words, location, destroy_parent);
-      return true;
+      if (run_file == true) {
+        run_execv(command_words, location);
+      }
+      return location;
     }
   }
 
-  printf("%s does not exist!\n", location);
-  return false;
+  return "\0";
 }
 
-void run_execv(char** command_words, char* command, bool destroy_parent) {
-  if(fork() == 0) {
-    printf("I am a child!\n");
-    execv(command, command_words);
-    printf("Something went wrong!\n");
-    exit(0);
-  } else {
-    if (destroy_parent == true) {
-      exit(0);
-    } else {
-      wait(NULL);
-    }
-  }
+void run_execv(char** command_words, char* command) {
+  execv(command, command_words);
+  printf("Something went wrong!\n");
+  exit(0);
 }
 
 int contains_redirection(char** command_words, int words) {
@@ -295,31 +287,52 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
     if (i == num_separators) { end_index = words; }
     for (int j = start_index; j < end_index; j++) {
       strcpy(separated_command_words[i][j - start_index], command_words[j]);
+      separated_command_words[i][j] = (char*) realloc(separated_command_words[i][j], end_index - start_index);
     }
     (*command_lengths)[i] = end_index - start_index;
     end_index++;
   }
 
-  // file_exists(command_words_sub_command, end_index - start_index, path, paths, false);
   return separated_command_words;
 
 }
 
 void execute_commands(char*** commands, int commands_issued, char** path, int *paths, int* command_lengths) {
 
-  // Using first fork to keep one single process alive after all
-  // commands have been issued
+  char** commands_correct_length[commands_issued];
 
-  if(fork() != 0) {
-    for (int i = 0; i < commands_issued; i++) {
-      if (!is_builtin(commands[i], command_lengths[i], path, paths)) {
-        bool exists = file_exists(commands[i], command_lengths[i], path, *paths, true);
-      }
+  for(int i = 0; i < commands_issued; i++) {
+    commands_correct_length[i] = malloc(command_lengths[i] * sizeof(char*));
+    for(int j = 0; j < command_lengths[i]; j++) {
+      commands_correct_length[i][j] = malloc(strlen(commands[i][j]) * sizeof(char));
+      strcpy(commands_correct_length[i][j], commands[i][j]);
     }
-    exit(0);
-  } else {
-    printf("I'm the super parent!\n");
-    wait(NULL);
   }
 
+  // Using first fork to keep one single process alive after all
+  // commands have been issued
+  int pid = fork();
+  if (pid == 0) {
+    for(int i = 0; i < commands_issued; i++) {
+      if(is_builtin(commands_correct_length[i], command_lengths[i], path, paths)) { continue; }
+      char* location = file_exists(commands_correct_length[i], command_lengths[i], path, *paths, false);
+      if(strcmp(location, "\0") != 0) {
+        // creating secondary fork to run execv and continue loop
+        int pid2 = fork();
+        if (pid2 == 0) {
+          //execv(location, commands_correct_length[i]);
+          run_execv(commands_correct_length[i], location);
+        }
+      } else {
+        printf("File not found!\n");
+      }
+    }
+    // exiting out from the fork that continued through entirety of loop
+    // while waiting for all execv calls to complete
+    wait(NULL);
+    exit(0);
+  } else {
+    // parent process waiting for the parallel commands to complete
+    wait(NULL);
+  }
 }

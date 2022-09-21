@@ -70,7 +70,9 @@ void main_loop(FILE * in){
   do {
 
     words = 0;
-    dush_prompt();
+    if (in == stdin){
+      dush_prompt();
+    }
     input = getline(&buffer, &bufsize, in);
 
     if(strcmp(buffer, "\n") == 0) { continue; }
@@ -85,6 +87,10 @@ void main_loop(FILE * in){
 
     free(separated_command_words);
     free(command_lengths);
+
+    if(in != stdin){
+      exit(0);
+    }
 
   } while ( /*strcmp(buffer, "exit\n")*/ true);
 

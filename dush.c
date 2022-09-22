@@ -169,6 +169,11 @@ char** separate_command(char* buffer, int* words){
 }
 
 bool is_builtin(char** command_words, int words, char*** path, int* paths, bool run){
+  /*
+    This function checks if the provided command is one of three builtins.
+    If run is set to true, the commands will be executed, otherwise they
+    only return the boolean value of whether they are builtins or not
+  */
 
   char* command = command_words[0];
 
@@ -205,12 +210,20 @@ bool is_builtin(char** command_words, int words, char*** path, int* paths, bool 
 }
 
 void change_directory(char* location){
+  /*
+    This function either changes the cwd to the specified location
+    or provides an error response.
+  */
   if (chdir(location) != 0) {
     error_prompt();
   }
 }
 
 char** overwrite_path(char** command_words, int words, char*** path, int* paths){
+  /*
+    This function erases the existing paths and generates a replacement
+    array of lists to act as the new paths
+  */
 
   char** new_path;
   new_path = malloc((words-1) * sizeof(char*));
@@ -226,6 +239,10 @@ char** overwrite_path(char** command_words, int words, char*** path, int* paths)
 }
 
 char* file_exists(char** command_words, int words, char** path, int paths, bool run_file, int redirectResult) {
+  /*
+    This function checks if the file exists through checking all paths
+    for an executable that shares namesake with the first command word
+  */
 
   char* location = malloc(32 * sizeof(char));
 
@@ -252,6 +269,11 @@ char* file_exists(char** command_words, int words, char** path, int paths, bool 
 }
 
 void run_execv(char** command_words, char* command, int redirectResult, int num_commands) {
+  /*
+    This function executes the execv method from a forked process. This function
+    is flexible to whether or not redirect is intended.
+  */
+
 	char ** redirect_command_words;
   int redirect_words = 1;
   bool rd = false;
@@ -375,6 +397,11 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
 }
 
 void execute_commands(char*** commands, int commands_issued, char*** path, int *paths, int* command_lengths) {
+  /*
+    This function controls the forking for parallel processes or singular processes.
+    commands represents a 2d array of strings with the assumption that every
+    sublist (representative of a single command) is to be run in parallel.
+  */
 
   bool exit_issued = false;
   char** commands_correct_length[commands_issued];

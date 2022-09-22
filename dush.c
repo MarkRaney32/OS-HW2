@@ -172,21 +172,28 @@ bool is_builtin(char** command_words, int words, char*** path, int* paths, bool 
 
   char* command = command_words[0];
 
-  if (strcmp(command, "exit") == 0 && words == 1){
+  if (strcmp(command, "exit") == 0){
     // command_words string array was dynamically allocated, so
     // don't forget to free the memory!
     //free(command_words);
-    exit(0);
+    if (!run) {
+      return false;
+    }
+    if (run && words != 1) {
+      error_prompt();
+      exit(0);
+    }
   } else if (strcmp(command, "cd") == 0) {
     if(run) {
       if(words == 2) {
         change_directory(command_words[1]);
         return true;
+      } else {
+        error_prompt();
       }
-      error_prompt();
-      return false;
+      return true;
     } else {
-      return false;
+      return true;
     }
   } else if (strcmp(command, "path") == 0) {
     if(run) { *path = overwrite_path(command_words, words, path, paths); }
@@ -231,6 +238,8 @@ char* file_exists(char** command_words, int words, char** path, int paths, bool 
         run_execv(command_words, location, redirectResult, words);
       }
       return location;
+    } else if(strcmp(command_words[0], "exit") != 0) {
+      error_prompt();
     }
   }
 
@@ -381,9 +390,11 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
 
   int pid = fork();
   if (pid == 0) {
+    bool builtin;
     for(int i = 0; i < commands_issued; i++) {
 			redirect = contains_redirection(commands_correct_length[i], command_lengths[i]);
-      if(is_builtin(commands_correct_length[i], command_lengths[i], path, paths, false)) { continue; }
+      builtin = is_builtin(commands_correct_length[i], command_lengths[i], path, paths, false);
+      if(builtin) { continue; }
       char* location = file_exists(commands_correct_length[i], command_lengths[i], *path, *paths, false, redirect);
       if(strcmp(location, "\0") != 0) {
         // creating secondary fork to run execv and continue loop

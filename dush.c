@@ -73,11 +73,11 @@ void main_loop(FILE * in){
   if(in != stdin) {
 
     // saving each line in file to string in array
-    char** bash_storage;
+    char* bash_storage[1000];
     int bash_storage_size = 0;
     input = getline(&buffer, &bufsize, in);
     while(input != -1) {
-      bash_storage = realloc(bash_storage, ++bash_storage_size);
+      bash_storage_size++;
       bash_storage[bash_storage_size - 1] = malloc(strlen(buffer) * sizeof(char));
       strcpy(bash_storage[bash_storage_size-1], buffer);
       input = getline(&buffer, &bufsize, in);
@@ -229,6 +229,11 @@ char* file_exists(char** command_words, int words, char** path, int paths, bool 
 
   char* location = malloc(32 * sizeof(char));
 
+  if (paths == 0 && strcmp(command_words[0], "exit") != 0) {
+    error_prompt();
+    return "\0";
+  }
+
   for (int i = 0; i < paths; i++) {
     strcpy(location, path[i]);
     strcat(location, "/");
@@ -250,6 +255,8 @@ void run_execv(char** command_words, char* command, int redirectResult, int num_
 	char ** redirect_command_words;
   int redirect_words = 1;
   bool rd = false;
+
+  printf("Num commands: %d\n", num_commands);
 
 	if (redirectResult >= 0 && num_commands == (redirectResult + 2)) {
 		rd = true;
@@ -343,9 +350,6 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
   char*** separated_command_words = malloc((num_separators + 1) * sizeof(char *));
   for (int i = 0; i < num_separators + 1; i++) {
     separated_command_words[i] = malloc(words * sizeof(char *));
-    for (int j = 0; j < words; j++) {
-      separated_command_words[i][j] = malloc(32 * sizeof(char));
-    }
   }
 
   // separating commands to individual subcommands
@@ -356,8 +360,8 @@ char *** separate_parallel_commands(char** command_words, int words, char** path
     end_index = separator_indexes[i];
     if (i == num_separators) { end_index = words; }
     for (int j = start_index; j < end_index; j++) {
+      separated_command_words[i][j-start_index] = malloc((end_index - start_index + 10) * sizeof(char));
       strcpy(separated_command_words[i][j - start_index], command_words[j]);
-      separated_command_words[i][j] = (char*) realloc(separated_command_words[i][j], end_index - start_index);
     }
     (*command_lengths)[i] = end_index - start_index;
     end_index++;

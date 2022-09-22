@@ -10,7 +10,7 @@
 #include<sys/wait.h>
 #include<fcntl.h>
 
-void main_loop(FILE * in);
+void main_loop(FILE * file_name);
 char** separate_command(char* buffer, int* words);
 bool is_builtin(char** command_words, int words, char*** path, int* paths, bool run);
 void change_directory(char* location);
@@ -23,7 +23,9 @@ char*** separate_parallel_commands(char** command_words, int words, char** path,
 void execute_commands(char*** commands, int commands_issued, char*** path, int *paths, int* command_lengths);
 
 void dush_prompt() {
-  printf("dush> ");
+  fflush(stdout);
+  char p[10] = "dush>";
+  write(STDOUT_FILENO, p, strlen(p));
 }
 
 void error_prompt() {
@@ -51,8 +53,8 @@ int main(int argc, char * argv[]) {
 void main_loop(FILE * in){
   char* buffer;
   char** command_words;
-  int words;
-  size_t bufsize = 128;
+  int words = 0;
+  size_t bufsize = 0;
   size_t input;
   char*** separated_command_words;
   int commands_issued;
@@ -66,40 +68,47 @@ void main_loop(FILE * in){
   path[0] = malloc(strlen(initial_path) * sizeof(char));
   path[0] = initial_path;
 
+  // looping until end of line is reached
 
-  do {
+  if(in != stdin) {
 
-    words = 0;
-    if (in == stdin){
-      dush_prompt();
-    }
+    // saving each line in file to string in array
+    char** bash_storage;
+    int bash_storage_size = 0;
     input = getline(&buffer, &bufsize, in);
-
-    if(strcmp(buffer, "\n") == 0) { continue; }
-
-    command_words = separate_command(buffer, &words);
-
-    separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
-
-    if(words == 0) { continue; }
-
-    execute_commands(separated_command_words, commands_issued, &path, &paths, command_lengths);
-
-    free(separated_command_words);
-    free(command_lengths);
-
-    if(in != stdin){
-      exit(0);
+    while(input != -1) {
+      bash_storage = realloc(bash_storage, ++bash_storage_size);
+      bash_storage[bash_storage_size - 1] = malloc(strlen(buffer) * sizeof(char));
+      strcpy(bash_storage[bash_storage_size-1], buffer);
+      input = getline(&buffer, &bufsize, in);
     }
 
-  } while ( /*strcmp(buffer, "exit\n")*/ true);
+    for(int i = 0; i < bash_storage_size; i++) {
+      words = 0;
+      if(strcmp(bash_storage[i], "\n") == 0) { continue; }
+      command_words = separate_command(bash_storage[i], &words);
+      if(words == 0) { continue; }
+      separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
+      execute_commands(separated_command_words, commands_issued, &path, &paths, command_lengths);
+    }
+  } else {
+    do {
+      if (in == stdin){
+        words = 0;
+        dush_prompt();
+        input = getline(&buffer, &bufsize, in);
+        if(strcmp(buffer, "\n") == 0) { continue; }
+        command_words = separate_command(buffer, &words);
+        if(words == 0) { continue; }
+        separated_command_words = separate_parallel_commands(command_words, words, path, paths, &commands_issued, &command_lengths);
+        execute_commands(separated_command_words, commands_issued, &path, &paths, command_lengths);
+      }
 
-  // remember to free this string array because
-  // its memory was allocated on the heap.
-  free(command_words);
+      //free(separated_command_words);
+      //free(command_lengths);
 
-  exit(0);
-
+    } while (true);
+  }
 }
 
 char** separate_command(char* buffer, int* words){
@@ -149,8 +158,10 @@ char** separate_command(char* buffer, int* words){
     found = strsep(&buffer, " ");
     if (strcmp(found,"\0") != 0) {
       strcpy(command_words[i], found);
+      //printf("%s ", command_words[i]);
       i++;
     }
+    //printf("\n");
   }
 
   return command_words;
@@ -164,11 +175,19 @@ bool is_builtin(char** command_words, int words, char*** path, int* paths, bool 
   if (strcmp(command, "exit") == 0 && words == 1){
     // command_words string array was dynamically allocated, so
     // don't forget to free the memory!
-    free(command_words);
+    //free(command_words);
     exit(0);
-  } else if (strcmp(command, "cd") == 0 && words == 2) {
-    if(run) { change_directory(command_words[1]); }
-    return true;
+  } else if (strcmp(command, "cd") == 0) {
+    if(run) {
+      if(words == 2) {
+        change_directory(command_words[1]);
+        return true;
+      }
+      error_prompt();
+      return false;
+    } else {
+      return false;
+    }
   } else if (strcmp(command, "path") == 0) {
     if(run) { *path = overwrite_path(command_words, words, path, paths); }
     return true;
@@ -180,17 +199,12 @@ bool is_builtin(char** command_words, int words, char*** path, int* paths, bool 
 
 void change_directory(char* location){
   if (chdir(location) != 0) {
-    fprintf(stderr, "%s\n", strerror(errno));
+    error_prompt();
   }
 }
 
 char** overwrite_path(char** command_words, int words, char*** path, int* paths){
 
-  /*
-  for(int i = 0; i < *paths; i++) {
-    printf("%s\n", (*path)[i]);
-  } //free(*path);
-  */
   char** new_path;
   new_path = malloc((words-1) * sizeof(char*));
 
@@ -254,7 +268,7 @@ void run_execv(char** command_words, char* command, int redirectResult, int num_
 	} else {
 		execv(command, command_words);
 	}
-	printf("Something went wrong!\n");
+	error_prompt();
 	exit(0);
 }
 
@@ -376,6 +390,7 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
         int pid2 = fork();
         if (pid2 == 0) {
           run_execv(commands_correct_length[i], location, redirect, command_lengths[i]);
+          exit(0);
         }
       }
     }
@@ -383,16 +398,16 @@ void execute_commands(char*** commands, int commands_issued, char*** path, int *
     // while waiting for all execv calls to complete
     wait(NULL);
     exit(0);
+  } else {
+    // parent process waiting for the parallel commands to complete
+    int returnStatus;
+    waitpid(pid, &returnStatus, 0);
+
+    // checking if first command is builtin
+    // (This is done w the assumption that parallel commands
+    //  will not include builtin commands)
+    is_builtin(commands_correct_length[0], command_lengths[0], path, paths, true);
   }
-
-  // parent process waiting for the parallel commands to complete
-  int returnStatus;
-  waitpid(pid, &returnStatus, 0);
-
-  // checking if first command is builtin
-  // (This is done w the assumption that parallel commands
-  //  will not include builtin commands)
-  is_builtin(commands_correct_length[0], command_lengths[0], path, paths, true);
 
   if(exit_issued) {
     exit(0);

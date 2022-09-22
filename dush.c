@@ -130,7 +130,7 @@ char** separate_command(char* buffer, int* words){
 
   // counting number of spaces in the string input
   bool awaiting_new_word = true;
-  for(int i = 0; i < strlen(buffer) - 1; i++){
+  for(int i = 0; i < strlen(buffer); i++){
     if (buffer[i] != ' ' && awaiting_new_word) {
       (*words)++;
       awaiting_new_word = false;
@@ -256,25 +256,28 @@ void run_execv(char** command_words, char* command, int redirectResult, int num_
   int redirect_words = 1;
   bool rd = false;
 
-  printf("Num commands: %d\n", num_commands);
+	if (redirectResult >= 0) {
+    if(num_commands == (redirectResult + 2)) {
+      rd = true;
+      char f[64];
+      strcpy(f, command_words[redirectResult + 1]);
+      for (int i = redirectResult; i < num_commands; i++) {
+        command_words[i] = "\0";
+      }
+      redirect_command_words = malloc(redirectResult * sizeof(char*));
+      for (int i = 0; i < redirectResult; i++) {
+        redirect_command_words[i] = malloc(32 * sizeof(char));
+        strcpy(redirect_command_words[i], command_words[i]);
+      }
 
-	if (redirectResult >= 0 && num_commands == (redirectResult + 2)) {
-		rd = true;
-		char f[64];
-		strcpy(f, command_words[redirectResult + 1]);
-		for (int i = redirectResult; i < num_commands; i++) {
-			command_words[i] = "\0";
-		}
-		redirect_command_words = malloc(redirectResult * sizeof(char*));
-		for (int i = 0; i < redirectResult; i++) {
-			redirect_command_words[i] = malloc(32 * sizeof(char));
-			strcpy(redirect_command_words[i], command_words[i]);
-		}
-
-		int fileOut = open(f, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-		dup2(fileOut, STDOUT_FILENO);
-		dup2(fileOut, STDERR_FILENO);
-		close(fileOut);
+      int fileOut = open(f, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+      dup2(fileOut, STDOUT_FILENO);
+      dup2(fileOut, STDERR_FILENO);
+      close(fileOut);
+    } else {
+      error_prompt();
+      exit(0);
+    }
 	} else if (redirectResult != -1) {
 		error_prompt();
 		exit(0);
